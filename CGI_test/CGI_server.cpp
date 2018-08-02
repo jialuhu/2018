@@ -59,8 +59,8 @@ void server::create_socket()
     }
     else{
         close(1);
-        dup2(connfd,1);
-        printf("abc hujialu\n");
+        int ret = dup2(connfd,1);
+        printf("new filefd:%d\n",ret);
         close(connfd);
     }
     close(sock);

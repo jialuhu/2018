@@ -17,6 +17,6 @@
 #include<string.h>
 #include<stdio.h>
 using namespace std;
-const char *ip = "127.0.01";
+const char *ip = "127.0.0.1";
 const int port = 4507;
 #endif
