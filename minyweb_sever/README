@@ -1,1 +1,1 @@
-g++ myserver.cpp -pthread -o sever
+## g++ myserver.cpp -pthread -o sever
