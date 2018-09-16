@@ -25,10 +25,11 @@ using namespace std;
 #define READ_BUF 2000
 class http_coon{
 public:
-    enum HTTP_CODE{NO_REQUESTION, GET_REQUESTION, BAD_REQUESTION, FORBIDDEN_REQUESTION,FILE_REQUESTION,INTERNAL_ERROR,NOT_FOUND,DYNAMIC_FILE};
+    enum HTTP_CODE{NO_REQUESTION, GET_REQUESTION, BAD_REQUESTION, FORBIDDEN_REQUESTION,FILE_REQUESTION,INTERNAL_ERROR,NOT_FOUND,DYNAMIC_FILE,POST_FILE};
     enum CHECK_STATUS{HEAD,REQUESTION};
 private:
     char requst_head_buf[1000];//响应头的填充
+    char post_buf[1000];
     char read_buf[READ_BUF];//客户端的http请求读取
     char filename[250];//文件总目录
     int file_size;//文件大小
@@ -46,32 +47,33 @@ private:
     char path_404[40];
     char message[1000];
     char body[2000];
-    CHECK_STATUS status;
+    CHECK_STATUS status;//状态转移
     bool m_flag;
 public:
     int epfd;
     int client_fd;
     int read_count;
-
     http_coon();
-    void init(int e_fd, int c_fd);
     ~http_coon();
+    void init(int e_fd, int c_fd);
     int myread();//读取请求
     bool mywrite();//响应发送
     void doit();//线程接口函数
-    void close_coon();
+    void close_coon();//关闭客户端链接
 private:
     HTTP_CODE analyse();//解析Http请求头的函数
-    int jude_line(char *temp, int &check_index, int &read_buf_len);//该请求是否是完整的以行\r\n
-    HTTP_CODE head_analyse(char *temp);
-    HTTP_CODE requestion_analyse(char *temp);
-    HTTP_CODE do_file();
-    void modfd(int epfd, int sock, int ev);
-    void dynamic(char *filename, char *argv);
-    bool bad_respond();
-    bool forbiden_respond();
-    bool succeessful_respond();
-    bool not_found_request();
+    int jude_line(int &check_index, int &read_buf_len);//该请求是否是完整的以行\r\n
+    HTTP_CODE head_analyse(char *temp);//http请求头解析
+    HTTP_CODE requestion_analyse(char *temp);//http请求行解析
+    HTTP_CODE do_post();//对post请求方法进行解析
+    HTTP_CODE do_file();//对GET请求方法中的url 协议版本的分离
+    void modfd(int epfd, int sock, int ev);//改变socket为状态
+    void dynamic(char *filename, char *argv);//通过get方法进入的动态请求处理
+    void post_respond();
+    bool bad_respond();//语法错误请求响应填充
+    bool forbiden_respond();//资源权限限制请求响应的填充
+    bool succeessful_respond();//解析成功请求响应填充
+    bool not_found_request();//资源不存在请求响应填充
 };
 
 void http_coon::init(int e_fd, int c_fd)
@@ -127,11 +129,12 @@ int http_coon::myread()
         }
         read_count = read_count + ret;
     }
+    strcpy(post_buf,read_buf);
     cout << read_buf << endl;
     return 1;
 }
 
-bool http_coon::succeessful_respond()
+bool http_coon::succeessful_respond()//200
 {
     m_flag = false;
     bzero(requst_head_buf,sizeof(requst_head_buf));
@@ -147,7 +150,7 @@ bool http_coon::bad_respond()//400
     struct stat my_file;
     if(stat(filename,&my_file)<0)
     {
-        cout << "草拟\n";
+        cout << "文件不存在\n";
     }
     file_size = my_file.st_size;
     bzero(requst_head_buf,sizeof(requst_head_buf));
@@ -169,7 +172,7 @@ bool http_coon::forbiden_respond()//403
     bzero(requst_head_buf,sizeof(requst_head_buf));
     sprintf(requst_head_buf,"HTTP/1.1 403 FORBIDDEN\r\nConnection: close\r\ncontent-length:%d\r\n\r\n",file_size);
 }
-bool http_coon::not_found_request()
+bool http_coon::not_found_request()//404
 {
     bzero(url, strlen(url));
     strcpy(path_404,"not_found_request.html");
@@ -186,6 +189,7 @@ bool http_coon::not_found_request()
     sprintf(requst_head_buf,"HTTP/1.1 404 NOT_FOUND\r\nConnection: close\r\ncontent-length:%d\r\n\r\n",file_size);
 }
 
+/*动态请求处理*/
 void http_coon::dynamic(char *filename, char *argv)
 {
     int len = strlen(argv);
@@ -208,11 +212,18 @@ void http_coon::dynamic(char *filename, char *argv)
         sprintf(body,"<html><body>\r\n<p>%d * %d = %d </p><hr>\r\n</body></html>\r\n",number[0],number[1],sum);
         sprintf(requst_head_buf,"HTTP/1.1 200 ok\r\nConnection: close\r\ncontent-length: %d\r\n\r\n",strlen(body));
     }
-   // sprintf(body,"<html><body>\r\n<p>%d + %d = %d </p><hr>\r\n</body></html>\r\n",number[0],number[1],sum);
-   // sprintf(requst_head_buf,"HTTP/1.1 200 ok\r\nConnection: close\r\ncontent-length: %d\r\n\r\n",strlen(body));
-    cout << requst_head_buf << endl;
-    cout << body << endl;
 }
+
+void http_coon::post_respond()
+{
+    if(fork()==0)
+    {
+        dup2(client_fd,STDOUT_FILENO);
+        execl(filename,argv,NULL);
+    }
+    wait(NULL);
+}
+/*线程接口函数*/
 void http_coon::doit()
 {
     cout << "doit\n";
@@ -220,7 +231,7 @@ void http_coon::doit()
     cout << "choice:" << choice << endl;
     switch(choice)
     {
-        case NO_REQUESTION:
+        case NO_REQUESTION://请求不完整
         {
             cout << "NO_REQUESTION\n";
             /*改变epoll的属性*/
@@ -248,7 +259,7 @@ void http_coon::doit()
             modfd(epfd, client_fd, EPOLLOUT);
             break;   
         }
-        case FILE_REQUESTION://文件资源无问题
+        case FILE_REQUESTION://GET文件资源无问题
         {
             cout << "文件file request\n";
             succeessful_respond();
@@ -263,6 +274,12 @@ void http_coon::doit()
             modfd(epfd, client_fd, EPOLLOUT);
             break;
         }
+        case POST_FILE:
+        {
+            cout << "post_respond\t\t%%%%\n";
+            post_respond();
+            break;
+        }
         default:
         {
             close_coon();
@@ -271,20 +288,19 @@ void http_coon::doit()
     }
 }
 /*判断一行是否读取完整*/
-int http_coon::jude_line(char *temp, int &check_index, int &read_buf_len)
+int http_coon::jude_line(int &check_index, int &read_buf_len)
 {
+    cout << "hujalu:"<< check_index << endl;
+    cout << read_buf << endl;
     char ch;
     for( ; check_index<read_buf_len; check_index++)
     {
-        if(check_index==26)
+        ch = read_buf[check_index];
+        if(ch == '\r' && check_index+1<read_buf_len && read_buf[check_index+1]=='\n')
         {
-            cout << temp[check_index] << endl;
-        }
-        ch = temp[check_index];
-        if(ch == '\r' && check_index+1<read_buf_len && temp[check_index+1]=='\n')
-        {
-            temp[check_index++] = '\0';
-            temp[check_index++] = '\0';
+            cout << "cao ni daye:" << check_index<<endl;
+            read_buf[check_index++] = '\0';
+            read_buf[check_index++] = '\0';
             return 1;//完整读入一行
         }
         if(ch == '\r' && check_index+1==read_buf_len)
@@ -293,10 +309,10 @@ int http_coon::jude_line(char *temp, int &check_index, int &read_buf_len)
         }
         if(ch == '\n')
         {
-            if(check_index>1 && temp[check_index-1]=='\r')
+            if(check_index>1 && read_buf[check_index-1]=='\r')
             {
-                temp[check_index-1] = '\0';
-                temp[check_index++] = '\0';
+                read_buf[check_index-1] = '\0';
+                read_buf[check_index++] = '\0';
                 return 1;
             }
             else{
@@ -316,13 +332,15 @@ http_coon::HTTP_CODE http_coon::analyse()
     check_index = 0;
     int star = 0;
     read_buf_len = strlen(read_buf);
-    cout << "read_buf_len:" << read_buf_len << endl;
-    while((flag=jude_line(read_buf, check_index, read_buf_len))==1)
+    int len = read_buf_len;
+    cout << "read_buf_len:" << read_buf_len <<" 6666 "<< read_buf[43]<<read_buf[44]<<read_buf[45] << endl;
+    while((flag=jude_line(check_index, len))==1)
     {
-        cout << "star:"<< star << endl;
-        temp = temp + star;
-        cout << "temp:" << temp << endl;
-        star = check_index;
+     //   cout << "check_index:" << check_index << endl;
+        //cout << "star:"<< star << endl;
+        temp = read_buf + star_line;
+        //cout << "temp:" << temp << endl;
+        star_line = check_index;
         switch(status)
         {
             case REQUESTION://请求行分析，包括文件名称和请求方法
@@ -340,11 +358,22 @@ http_coon::HTTP_CODE http_coon::analyse()
             }
             case HEAD://请求头的分析
             {
+                cout << "寂寞在流动："<< temp << endl;
                 int ret;
                 ret = head_analyse(temp);
                 if(ret==GET_REQUESTION)
                 {
-                    return do_file();//文件名判断函数
+                    if(strcmp(method,"GET")==0)
+                    {
+                        return do_file();//文件名判断函数     
+                    }
+                    else if(strcmp(method,"POST")==0)
+                    {
+                        return do_post();
+                    }
+                    else{
+                        return BAD_REQUESTION;
+                    }
                 }
                 break;
             }
@@ -398,7 +427,7 @@ http_coon::HTTP_CODE http_coon::requestion_analyse(char *temp)
     p[0] = '\0';
     p++;
     cout << version << endl;
-    if(strcmp(method,"GET")!=0)
+    if(strcmp(method,"GET")!=0&&strcmp(method,"POST")!=0)
     {
         return BAD_REQUESTION;
     }
@@ -417,6 +446,7 @@ http_coon::HTTP_CODE http_coon::requestion_analyse(char *temp)
 /*解析头部信息*/
 http_coon::HTTP_CODE http_coon::head_analyse(char *temp)
 {
+    cout << "告诉我进来了马。。。\n";
     if(temp[0]=='\0')
     {
         //获得一个完整http请求
@@ -437,9 +467,11 @@ http_coon::HTTP_CODE http_coon::head_analyse(char *temp)
     }
     else if(strncasecmp(temp,"Content-Length:", 15)==0)
     {
+        cout << "886???\n";
         temp = temp+15;
         while(*temp==' ')
         {
+            cout << *temp << endl;
             temp++;
         }
         m_http_count = atol(temp);
@@ -466,7 +498,6 @@ http_coon::HTTP_CODE http_coon::do_file()
     {
         argv = ch+1;
         *ch = '\0';
-        //strcpy(filename,path);
         strcpy(filename,url);
         cout << "(((filename)))" << filename << endl;
         cout << "(((argv:)))" << argv << endl;
@@ -489,10 +520,30 @@ http_coon::HTTP_CODE http_coon::do_file()
             {
                 return BAD_REQUESTION;//BAD_REQUESTION 400
             }
-    //int fd = open(filename, O_RDONLY);
             file_size = m_file_stat.st_size;
             return FILE_REQUESTION;
     }
+}
+http_coon::HTTP_CODE http_coon::do_post()
+{
+    int k = 0;
+    int star;
+    char path[34]="/home/jialuhu/linux_net/web_sever";
+    strcpy(filename,path);
+    strcat(filename,url);
+    cout << filename << "业绩"<<endl;
+    star = read_buf_len-m_http_count;
+    cout << read_buf_len << " " << m_http_count<<endl;
+    argv = post_buf + star;
+    cout << "8888\n";
+    cout << argv << endl;
+    argv[strlen(argv)+1]='\0';
+    cout << "my argv:++++" << argv << endl;
+    if(filename!=NULL && argv!=NULL)
+    {
+        return POST_FILE;
+    }
+    return BAD_REQUESTION;
 }
 bool http_coon::mywrite()
 {
