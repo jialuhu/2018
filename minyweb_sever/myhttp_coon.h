@@ -336,10 +336,7 @@ http_coon::HTTP_CODE http_coon::analyse()
     cout << "read_buf_len:" << read_buf_len <<" 6666 "<< read_buf[43]<<read_buf[44]<<read_buf[45] << endl;
     while((flag=jude_line(check_index, len))==1)
     {
-     //   cout << "check_index:" << check_index << endl;
-        //cout << "star:"<< star << endl;
         temp = read_buf + star_line;
-        //cout << "temp:" << temp << endl;
         star_line = check_index;
         switch(status)
         {
@@ -358,7 +355,6 @@ http_coon::HTTP_CODE http_coon::analyse()
             }
             case HEAD://请求头的分析
             {
-                cout << "寂寞在流动："<< temp << endl;
                 int ret;
                 ret = head_analyse(temp);
                 if(ret==GET_REQUESTION)
@@ -402,7 +398,6 @@ http_coon::HTTP_CODE http_coon::requestion_analyse(char *temp)
             }
             p[0] = '\0';
             p++;
-            cout << "method:" <<method << endl;
           //  method++;
         }
         if(i==1)
@@ -414,7 +409,6 @@ http_coon::HTTP_CODE http_coon::requestion_analyse(char *temp)
             }
             p[0] = '\0';
             p++;
-            cout << "url:" << url << endl;
         }
     }
     version = p;//请求协议保存
@@ -446,7 +440,6 @@ http_coon::HTTP_CODE http_coon::requestion_analyse(char *temp)
 /*解析头部信息*/
 http_coon::HTTP_CODE http_coon::head_analyse(char *temp)
 {
-    cout << "告诉我进来了马。。。\n";
     if(temp[0]=='\0')
     {
         //获得一个完整http请求
@@ -467,7 +460,6 @@ http_coon::HTTP_CODE http_coon::head_analyse(char *temp)
     }
     else if(strncasecmp(temp,"Content-Length:", 15)==0)
     {
-        cout << "886???\n";
         temp = temp+15;
         while(*temp==' ')
         {
@@ -499,8 +491,6 @@ http_coon::HTTP_CODE http_coon::do_file()
         argv = ch+1;
         *ch = '\0';
         strcpy(filename,url);
-        cout << "(((filename)))" << filename << endl;
-        cout << "(((argv:)))" << argv << endl;
         return DYNAMIC_FILE;
     }
     else{
@@ -526,22 +516,25 @@ http_coon::HTTP_CODE http_coon::do_file()
 }
 http_coon::HTTP_CODE http_coon::do_post()
 {
+    struct stat my_files;
     int k = 0;
     int star;
     char path[34]="/home/jialuhu/linux_net/web_sever";
     strcpy(filename,path);
     strcat(filename,url);
-    cout << filename << "业绩"<<endl;
     star = read_buf_len-m_http_count;
-    cout << read_buf_len << " " << m_http_count<<endl;
     argv = post_buf + star;
-    cout << "8888\n";
-    cout << argv << endl;
     argv[strlen(argv)+1]='\0';
-    cout << "my argv:++++" << argv << endl;
-    if(filename!=NULL && argv!=NULL)
+    if(stat(filename,&my_files)<0)
     {
-        return POST_FILE;
+        return BAD_REQUESTION;
+    }
+    else
+    {
+        if(filename!=NULL && argv != NULL)
+        {
+            return POST_FILE;
+        }
     }
     return BAD_REQUESTION;
 }
