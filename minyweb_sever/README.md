@@ -1,1 +1,1 @@
-## tiny web server
+## tinny web server
