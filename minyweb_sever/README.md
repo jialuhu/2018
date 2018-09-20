@@ -2,7 +2,7 @@
 ### 编译和执行分别如下：
 
 
-    ``` g++ myserver.cpp -o server -pthread ``` 
+    ```g++ myserver.cpp -o server -pthread 
 
-    ```./server```
+    ./server```
 
