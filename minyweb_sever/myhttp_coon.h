@@ -25,11 +25,13 @@ using namespace std;
 #define READ_BUF 2000
 class http_coon{
 public:
+    /*NO_REQUESTION是代表请求不完整，需要客户继续输入；BAD_REQUESTION是HTTP请求语法不正确；GET_REQUESTION代表获得并且解析了一个正确的HTTP请求；FORBIDDEN_REQUESTION是代表访问资源的权限有问题；FILE_REQUESTION代表GET方法资源请求；INTERNAL_ERROR代表服务器自身问题；NOT_FOUND代表请求的资源文件不存在；DYNAMIC_FILE表示是一个动态请求；POST_FILE表示获得一个以POST方式请求的HTTP请求*/
     enum HTTP_CODE{NO_REQUESTION, GET_REQUESTION, BAD_REQUESTION, FORBIDDEN_REQUESTION,FILE_REQUESTION,INTERNAL_ERROR,NOT_FOUND,DYNAMIC_FILE,POST_FILE};
+    /*HTTP请求解析的状态转移。HEAD表示解析头部信息，REQUESTION表示解析请求行*/
     enum CHECK_STATUS{HEAD,REQUESTION};
 private:
     char requst_head_buf[1000];//响应头的填充
-    char post_buf[1000];
+    char post_buf[1000];//Post请求的读缓冲区
     char read_buf[READ_BUF];//客户端的http请求读取
     char filename[250];//文件总目录
     int file_size;//文件大小
@@ -41,21 +43,21 @@ private:
     char *argv;//动态请求参数
     bool m_linger;//是否保持连接
     int m_http_count;//http长度
-    char *m_host;
-    char path_400[17];
-    char path_403[23];
-    char path_404[40];
-    char message[1000];
-    char body[2000];
+    char *m_host;//主机名记录
+    char path_400[17];//出错码400打开的文件名缓冲区
+    char path_403[23];//出错码403打开返回的文件名缓冲区
+    char path_404[40];//出错码404对应文件名缓冲区
+    char message[1000];//响应消息体缓冲区
+    char body[2000];//post响应消息体缓冲区
     CHECK_STATUS status;//状态转移
-    bool m_flag;
+    bool m_flag;//true表示是动态请求，反之是静态请求
 public:
     int epfd;
     int client_fd;
     int read_count;
     http_coon();
     ~http_coon();
-    void init(int e_fd, int c_fd);
+    void init(int e_fd, int c_fd);//初始化
     int myread();//读取请求
     bool mywrite();//响应发送
     void doit();//线程接口函数
@@ -65,11 +67,11 @@ private:
     int jude_line(int &check_index, int &read_buf_len);//该请求是否是完整的以行\r\n
     HTTP_CODE head_analyse(char *temp);//http请求头解析
     HTTP_CODE requestion_analyse(char *temp);//http请求行解析
-    HTTP_CODE do_post();//对post请求方法进行解析
+    HTTP_CODE do_post();//对post请求中的参数进行解析
     HTTP_CODE do_file();//对GET请求方法中的url 协议版本的分离
     void modfd(int epfd, int sock, int ev);//改变socket为状态
     void dynamic(char *filename, char *argv);//通过get方法进入的动态请求处理
-    void post_respond();
+    void post_respond();//POST请求响应填充
     bool bad_respond();//语法错误请求响应填充
     bool forbiden_respond();//资源权限限制请求响应的填充
     bool succeessful_respond();//解析成功请求响应填充
@@ -93,7 +95,7 @@ http_coon::~http_coon()
 {
 
 }
-
+/*关闭客户端链接*/
 void http_coon::close_coon()
 {
     epoll_ctl(epfd, EPOLL_CTL_DEL, client_fd, 0);
@@ -101,6 +103,7 @@ void http_coon::close_coon()
     client_fd = -1;
 
 }
+/*改变事件表中的事件属性*/
 void http_coon::modfd(int epfd, int client_fd, int ev)
 {
     epoll_event event;
@@ -109,6 +112,7 @@ void http_coon::modfd(int epfd, int client_fd, int ev)
     epoll_ctl(epfd, EPOLL_CTL_MOD, client_fd, &event);
     
 }
+/*read函数的封装*/
 int http_coon::myread()
 {
     bzero(&read_buf,sizeof(read_buf));
@@ -130,10 +134,9 @@ int http_coon::myread()
         read_count = read_count + ret;
     }
     strcpy(post_buf,read_buf);
-    cout << read_buf << endl;
     return 1;
 }
-
+/*响应状态的填充，这里返回可以不为bool类型*/
 bool http_coon::succeessful_respond()//200
 {
     m_flag = false;
@@ -213,7 +216,7 @@ void http_coon::dynamic(char *filename, char *argv)
         sprintf(requst_head_buf,"HTTP/1.1 200 ok\r\nConnection: close\r\ncontent-length: %d\r\n\r\n",strlen(body));
     }
 }
-
+/*POST请求处理*/
 void http_coon::post_respond()
 {
     if(fork()==0)
@@ -223,74 +226,10 @@ void http_coon::post_respond()
     }
     wait(NULL);
 }
-/*线程接口函数*/
-void http_coon::doit()
-{
-    cout << "doit\n";
-    int choice = analyse();//根据解析请求头的结果做选择
-    cout << "choice:" << choice << endl;
-    switch(choice)
-    {
-        case NO_REQUESTION://请求不完整
-        {
-            cout << "NO_REQUESTION\n";
-            /*改变epoll的属性*/
-            modfd(epfd, client_fd, EPOLLIN);
-            return;
-        }
-        case BAD_REQUESTION: //400
-        {
-            cout << "BAD_REQUESTION\n";
-            bad_respond();
-            modfd(epfd, client_fd, EPOLLOUT);
-            break;
-        }
-        case FORBIDDEN_REQUESTION://403
-        {
-            cout << "forbiden_respond\n";
-            forbiden_respond();
-            modfd(epfd, client_fd, EPOLLOUT);
-            break;
-        }
-        case NOT_FOUND://404
-        {
-            cout<<"not_found_request"<< endl;
-            not_found_request();
-            modfd(epfd, client_fd, EPOLLOUT);
-            break;   
-        }
-        case FILE_REQUESTION://GET文件资源无问题
-        {
-            cout << "文件file request\n";
-            succeessful_respond();
-            modfd(epfd, client_fd, EPOLLOUT);
-            break;
-        }
-        case DYNAMIC_FILE://动态请求处理
-        {
-            cout << "动态请求处理\n";
-            cout << filename << " " << argv << endl;
-            dynamic(filename, argv);
-            modfd(epfd, client_fd, EPOLLOUT);
-            break;
-        }
-        case POST_FILE:
-        {
-            cout << "post_respond\t\t%%%%\n";
-            post_respond();
-            break;
-        }
-        default:
-        {
-            close_coon();
-    }
 
-    }
-}
 /*判断一行是否读取完整*/
 int http_coon::jude_line(int &check_index, int &read_buf_len)
 {
-    cout << "hujalu:"<< check_index << endl;
     cout << read_buf << endl;
     char ch;
     for( ; check_index<read_buf_len; check_index++)
@@ -298,7 +237,6 @@ int http_coon::jude_line(int &check_index, int &read_buf_len)
         ch = read_buf[check_index];
         if(ch == '\r' && check_index+1<read_buf_len && read_buf[check_index+1]=='\n')
         {
-            cout << "cao ni daye:" << check_index<<endl;
             read_buf[check_index++] = '\0';
             read_buf[check_index++] = '\0';
             return 1;//完整读入一行
@@ -322,65 +260,7 @@ int http_coon::jude_line(int &check_index, int &read_buf_len)
     }
     return 0;
 }
-/*http请求解析*/
-http_coon::HTTP_CODE http_coon::analyse()
-{
-    status = REQUESTION;
-    int flag;
-    char *temp = read_buf;
-    int star_line = 0;
-    check_index = 0;
-    int star = 0;
-    read_buf_len = strlen(read_buf);
-    int len = read_buf_len;
-    cout << "read_buf_len:" << read_buf_len <<" 6666 "<< read_buf[43]<<read_buf[44]<<read_buf[45] << endl;
-    while((flag=jude_line(check_index, len))==1)
-    {
-        temp = read_buf + star_line;
-        star_line = check_index;
-        switch(status)
-        {
-            case REQUESTION://请求行分析，包括文件名称和请求方法
-            {
-                cout << "requestion\n";
-                int ret;
-                ret = requestion_analyse(temp);
-                if(ret==BAD_REQUESTION)
-                {
-                    cout << "ret == BAD_REQUESTION\n";
-                    //请求格式不正确
-                    return BAD_REQUESTION;
-                }
-                break;
-            }
-            case HEAD://请求头的分析
-            {
-                int ret;
-                ret = head_analyse(temp);
-                if(ret==GET_REQUESTION)
-                {
-                    if(strcmp(method,"GET")==0)
-                    {
-                        return do_file();//文件名判断函数     
-                    }
-                    else if(strcmp(method,"POST")==0)
-                    {
-                        return do_post();
-                    }
-                    else{
-                        return BAD_REQUESTION;
-                    }
-                }
-                break;
-            }
-            default:
-            {
-                return INTERNAL_ERROR;
-            }
-        }
-    }
-    return NO_REQUESTION;//请求不完整，需要继续读入
-}
+
 /*解析请求行*/
 http_coon::HTTP_CODE http_coon::requestion_analyse(char *temp)
 {
@@ -398,6 +278,7 @@ http_coon::HTTP_CODE http_coon::requestion_analyse(char *temp)
             }
             p[0] = '\0';
             p++;
+            cout << "method:" <<method << endl;
           //  method++;
         }
         if(i==1)
@@ -409,6 +290,7 @@ http_coon::HTTP_CODE http_coon::requestion_analyse(char *temp)
             }
             p[0] = '\0';
             p++;
+            cout << "url:" << url << endl;
         }
     }
     version = p;//请求协议保存
@@ -460,13 +342,14 @@ http_coon::HTTP_CODE http_coon::head_analyse(char *temp)
     }
     else if(strncasecmp(temp,"Content-Length:", 15)==0)
     {
+       
         temp = temp+15;
         while(*temp==' ')
         {
             cout << *temp << endl;
             temp++;
         }
-        m_http_count = atol(temp);
+        m_http_count = atol(temp);//content-length需要填充
     }
     else if(strncasecmp(temp,"Host:",5)==0)
     {
@@ -482,7 +365,8 @@ http_coon::HTTP_CODE http_coon::head_analyse(char *temp)
     }
     return NO_REQUESTION;
 }
-http_coon::HTTP_CODE http_coon::do_file()
+
+http_coon::HTTP_CODE http_coon::do_file()//GET方法请求，对其请求行进行解析，存写资源路径
 {
     char path[40]="/home/jialuhu/linux_net/web_sever";
     char* ch;
@@ -499,7 +383,7 @@ http_coon::HTTP_CODE http_coon::do_file()
             struct stat m_file_stat;
             if(stat(filename, &m_file_stat) < 0)
             {
-                cout << "打不开\n";
+                //cout << "打不开\n";
                 return NOT_FOUND;//NOT_FOUND 404
             }
             if( !(m_file_stat.st_mode & S_IROTH))//FORBIDDEN_REQUESTION 403
@@ -514,9 +398,8 @@ http_coon::HTTP_CODE http_coon::do_file()
             return FILE_REQUESTION;
     }
 }
-http_coon::HTTP_CODE http_coon::do_post()
+http_coon::HTTP_CODE http_coon::do_post()//POST方法请求，分解并且存入参数
 {
-    struct stat my_files;
     int k = 0;
     int star;
     char path[34]="/home/jialuhu/linux_net/web_sever";
@@ -525,22 +408,142 @@ http_coon::HTTP_CODE http_coon::do_post()
     star = read_buf_len-m_http_count;
     argv = post_buf + star;
     argv[strlen(argv)+1]='\0';
-    if(stat(filename,&my_files)<0)
+    if(filename!=NULL && argv!=NULL)
     {
-        return BAD_REQUESTION;
-    }
-    else
-    {
-        if(filename!=NULL && argv != NULL)
-        {
-            return POST_FILE;
-        }
+        return POST_FILE;
     }
     return BAD_REQUESTION;
 }
+
+/*http请求解析*/
+http_coon::HTTP_CODE http_coon::analyse()
+{
+    status = REQUESTION;
+    int flag;
+    char *temp = read_buf;
+    int star_line = 0;
+    check_index = 0;
+    int star = 0;
+    read_buf_len = strlen(read_buf);
+    int len = read_buf_len;
+    while((flag=jude_line(check_index, len))==1)
+    {
+        temp = read_buf + star_line;
+        star_line = check_index;
+        switch(status)
+        {
+            case REQUESTION://请求行分析，包括文件名称和请求方法
+            {
+                cout << "requestion\n";
+                int ret;
+                ret = requestion_analyse(temp);
+                if(ret==BAD_REQUESTION)
+                {
+                    cout << "ret == BAD_REQUESTION\n";
+                    //请求格式不正确
+                    return BAD_REQUESTION;
+                }
+                break;
+            }
+            case HEAD://请求头的分析
+            {
+                int ret;
+                ret = head_analyse(temp);
+                if(ret==GET_REQUESTION)//获取完整的HTTP请求
+                {
+                    if(strcmp(method,"GET")==0)
+                    {
+                        return do_file();//GET请求文件名分离函数     
+                    }
+                    else if(strcmp(method,"POST")==0)
+                    {
+                        return do_post();//POST请求参数分离函数
+                    }
+                    else{
+                        return BAD_REQUESTION;
+                    }
+                }
+                break;
+            }
+            default:
+            {
+                return INTERNAL_ERROR;
+            }
+        }
+    }
+    return NO_REQUESTION;//请求不完整，需要继续读入
+}
+
+
+
+/*线程取出工作任务的接口函数*/
+void http_coon::doit()
+{
+    int choice = analyse();//根据解析请求头的结果做选择
+    switch(choice)
+    {
+        case NO_REQUESTION://请求不完整
+        {
+            cout << "NO_REQUESTION\n";
+            /*改变epoll的属性*/
+            modfd(epfd, client_fd, EPOLLIN);
+            return;
+        }
+        case BAD_REQUESTION: //400
+        {
+            cout << "BAD_REQUESTION\n";
+            bad_respond();
+            modfd(epfd, client_fd, EPOLLOUT);
+            break;
+        }
+        case FORBIDDEN_REQUESTION://403
+        {
+            cout << "forbiden_respond\n";
+            forbiden_respond();
+            modfd(epfd, client_fd, EPOLLOUT);
+            break;
+        }
+        case NOT_FOUND://404
+        {
+            cout<<"not_found_request"<< endl;
+            not_found_request();
+            modfd(epfd, client_fd, EPOLLOUT);
+            break;   
+        }
+        case FILE_REQUESTION://GET文件资源无问题
+        {
+            cout << "文件file request\n";
+            succeessful_respond();
+            modfd(epfd, client_fd, EPOLLOUT);
+            break;
+        }
+        case DYNAMIC_FILE://动态请求处理
+        {
+            cout << "动态请求处理\n";
+            cout << filename << " " << argv << endl;
+            dynamic(filename, argv);
+            modfd(epfd, client_fd, EPOLLOUT);
+            break;
+        }
+        case POST_FILE://POST 方法处理
+        {
+            cout << "post_respond\n";
+            post_respond();
+            break;
+        }
+        default:
+        {
+            close_coon();
+    }
+
+    }
+}
+
+
+
 bool http_coon::mywrite()
 {
-    if(m_flag)
+    if(m_flag)//如果是动态请求，返回填充体
     {
         int ret=send(client_fd,requst_head_buf,strlen(requst_head_buf),0);
         int r = send(client_fd,body,strlen(body),0);
