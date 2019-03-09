@@ -118,6 +118,7 @@ void Baseclient :: thread_download()
 void Baseclient :: mysocket()
 {
     parse_address();
+    cout << "8\n";
     host = gethostbyname(fqdn);
    /* if(host == NULL)
     {
