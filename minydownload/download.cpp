@@ -22,6 +22,7 @@ using namespace std;
 struct file_imformation{
     char *file_path;//文件的绝对路径
     char file_name[1000];//文件解析出来的名称
+    char file_name_td[1000];//建立.*td文件，判断是否为断点下载
     long int file_length;//文件的大小字节数目
 };
 class Baseclient{
@@ -48,7 +49,6 @@ public:
         bzero(&server,sizeof(server));
        bzero(&host,sizeof(host));
        bzero(&myfile_information,sizeof(myfile_information));
- //       cout << address << "   " << thread_number << endl;
     };
     ~Baseclient();
     STATUS parse_address();//解析下载地址
@@ -107,10 +107,24 @@ Baseclient :: STATUS Baseclient :: parse_address()
     len = strlen(get);
     strcpy(myfile_information.file_name,get);
     myfile_information.file_name[strlen(get)] = '\0';
+
+    /*获取.*td文件名称*/
+    len = strlen(myfile_information.file_name);
+    for(int i=0; i<len; i++)
+    {
+        if(myfile_information.file_name[i]=='.')
+        {
+            myfile_information.file_name_td[i] = myfile_information.file_name[i];
+            break;
+        }
+        myfile_information.file_name_td[i] = myfile_information.file_name[i];
+    }
+    sprintf(myfile_information.file_name_td, "%s*td",myfile_information.file_name_td);
+    cout << "myfile_information.file_name_td: " << myfile_information.file_name_td << endl;
     return HTTPS;
 }
 
-/*发送HTTP请求头，接受HTTP响应头，对头部内容进行解析*/
+/*发送HTTP请求头，接收HTTP响应头，对头部内容进行解析*/
 void Baseclient :: parse_httphead()
 {
     cout << "发送HTTP请求头：\n";
@@ -162,10 +176,9 @@ void Baseclient :: parse_httphead()
     *get = '\0';
     length = length + 16;;
     cout << length << endl;
-    long int t = atol(length);
-    myfile_information.file_length = t;
-    cout << t << endl;
-    int fd = open(myfile_information.file_name, O_CREAT | O_WRONLY, S_IRWXG | S_IRWXO | S_IRWXU);
+    myfile_information.file_length = atol(length);
+    
+   /* int fd = open(myfile_information.file_name, O_CREAT | O_WRONLY, S_IRWXG | S_IRWXO | S_IRWXU);
     assert(fd >= 0);
     int index = 0;
     int mycount = 0;
@@ -176,7 +189,7 @@ void Baseclient :: parse_httphead()
         write(fd, buffer, index);
     }
     cout << "file_length::" << mycount<<endl;
-    close(fd);
+    close(fd);*/
 }
 void Baseclient :: thread_download()
 {
