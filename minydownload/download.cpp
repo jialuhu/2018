@@ -55,6 +55,8 @@ public:
     void parse_httphead();//解析HTTP响应头
     void thread_download();//多线程下载
     void mysocket();
+private:
+    static void *work(void *arg);
 };
 
 Baseclient :: ~Baseclient()
@@ -178,7 +180,7 @@ void Baseclient :: parse_httphead()
     cout << length << endl;
     myfile_information.file_length = atol(length);
     
-   /* int fd = open(myfile_information.file_name, O_CREAT | O_WRONLY, S_IRWXG | S_IRWXO | S_IRWXU);
+    /*int fd = open(myfile_information.file_name, O_CREAT | O_WRONLY, S_IRWXG | S_IRWXO | S_IRWXU);
     assert(fd >= 0);
     int index = 0;
     int mycount = 0;
@@ -191,8 +193,40 @@ void Baseclient :: parse_httphead()
     cout << "file_length::" << mycount<<endl;
     close(fd);*/
 }
+
+void* Baseclient :: work(void *arg)
+{
+    cout << "jinru\n";
+    class Baseclient *my = (class Baseclient *)arg;
+    cout << "myfile_information.file_name_td::00:" << my->myfile_information.file_name_td<<endl;
+    int fd = open(my->myfile_information.file_name_td, O_CREAT | O_WRONLY, S_IRWXG | S_IRWXO | S_IRWXU);
+    cout << "7777\n";
+   // cout << my->myfile_information.file_name_td << endl;
+    assert(fd > 0);
+    close(fd);
+    
+    return 0;
+}
 void Baseclient :: thread_download()
 {
+    void *statu;
+    /*如果.*td文件不存在，则为一个新的下载*/
+    if(access(myfile_information.file_name_td, F_OK) != 0)
+    {
+        pthread_t pid;
+        int i = 0;
+        //for(i=0; i<thread_number; i++)
+       // {
+            pthread_create(&pid, NULL, work, this);
+            pthread_join(pid, &statu);    
+        //}
+        //int fd = open()
+        
+    }
+    /*如果*/
+    else{
+
+    }
 
 }
 void Baseclient :: mysocket()
@@ -215,13 +249,13 @@ void Baseclient :: mysocket()
     cout << "成功连接服务器!\n";
 
     /*填充HTTP请求头*/
-    sprintf(http_request,"GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n ",myfile_information.file_path ,fqdn);
+    sprintf(http_request,"GET /%s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n ",myfile_information.file_path ,fqdn);
     cout << "http_request:\n" << http_request << endl;
     /*分析收到的HTTP响应头*/
     parse_httphead();
 
     /*根据线程数量进行下载文件*/
-  //  thread_download();
+    thread_download();
     
 }
 
