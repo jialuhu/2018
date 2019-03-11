@@ -25,6 +25,13 @@ struct file_imformation{
     char file_name_td[1000];//建立.*td文件，判断是否为断点下载
     long int file_length;//文件的大小字节数目
 };
+struct thread_package{
+    pthread_t pid;//线程号
+    int sockfd;//sockfd
+    int start;//文件下载起始位置
+    int end;//文件下载结束位置
+    char file_name[1000];//文件名称
+};
 
 class Baseclient{
 private:
@@ -33,10 +40,11 @@ private:
     int thread_number;//开辟的线程数量
     char *address;//下载地址参数
     char *fqdn;//FQDN解析
-    char http_request[100];//http请求头填写
+    char http_request[1000];//http请求头填写
     char http_respond[1000];//http响应头接收
     struct sockaddr_in server;//服务器套接字地址
     struct hostent *host;//通过解析下载地址，获取IP地址
+    struct thread_package Thread_package;//线程包
     struct file_imformation myfile_information;//文件信息
     enum STATUS{HTTP=0, HTTPS, HOST_WRONG};
     STATUS status;
@@ -46,8 +54,9 @@ public:
         port = 80;
         fqdn = NULL;
         status = HTTP;
-        memset(http_request, 0, 100);
+        memset(http_request, 0, 1000);
         bzero(&server,sizeof(server));
+        bzero(&Thread_package,sizeof(Thread_package));
        bzero(&host,sizeof(host));
        bzero(&myfile_information,sizeof(myfile_information));
     };
@@ -72,15 +81,17 @@ Baseclient :: STATUS Baseclient :: parse_address()
 {
     char *get;
     /*判断下载地址的状态*/
+    cout << "jinlaile: " << address << endl;
     if(strstr(address,"https") != NULL)
     {
         return HTTPS;
     }
+    cout << "jinlaile\n";
     if(strstr(address, "http") != NULL)
     {
         status = HTTP;
     }
-    
+   cout << "???\n"; 
     /*获取FQDN*/
     get = address + 7;
     fqdn = get;//获取FQDN的起始位置
@@ -91,7 +102,7 @@ Baseclient :: STATUS Baseclient :: parse_address()
     
     /*获取文件的绝对路径*/
     int len = strlen(get)+2;   
-    myfile_information.file_path = new char(len);
+    myfile_information.file_path = new char[len];
     sprintf(myfile_information.file_path, "/%s",get);
     myfile_information.file_path[len-1] = '\0';
   //  cout << myfile_information.file_path << endl;
@@ -197,34 +208,69 @@ void Baseclient :: parse_httphead()
 
 void* Baseclient :: work(void *arg)
 {
-    cout << "jinru\n";
-    class Baseclient *my = (class Baseclient *)arg;
-    cout << "myfile_information.file_name_td::00:" << my->myfile_information.file_name_td<<endl;
-    int fd = open(my->myfile_information.file_name_td, O_CREAT | O_WRONLY, S_IRWXG | S_IRWXO | S_IRWXU);
-    cout << "7777\n";
+    char *buffer;
+    struct thread_package *my = (struct thread_package *)arg;
+    cout << "myfile_information.file_name: " << my->file_name<<endl;
+    int len = (my->end) - (my->start);
+    buffer = new char[len];
+    cout << "len:" << len <<endl;
+    int fd = open(my->file_name, O_CREAT | O_WRONLY, S_IRWXG | S_IRWXO | S_IRWXU);
+   // cout << "7777\n";
    // cout << my->myfile_information.file_name_td << endl;
     assert(fd > 0);
+    off_t offset;
+    if((offset = lseek(fd, my->start, SEEK_SET)) < 0)
+    {
+        cout << "lseek is wrong!\n";
+    }
+    int ave = len;
+    int read_ret=0;
+    int ret = 0;
+    while((ret = read(my->sockfd, buffer, len))>0 && read_ret!=ave)
+    {
+        read_ret = read_ret + ret;
+        len = ave - read_ret;
+        int write_ret = write(fd, buffer, ret);
+        cout << "write buf:" << write_ret << endl;
+    };
+    if(ret < 0)
+    {
+        cout << "read is wrong!\n";
+    }
+    delete [] buffer;
     close(fd);
-    
     return 0;
 }
 void Baseclient :: thread_download()
 {
     void *statu;
+    int ave_bit;//线程平均字节数目
+    ave_bit = myfile_information.file_length / thread_number;
+    struct thread_package *Thread_package;
+    Thread_package = new struct thread_package[thread_number];
     /*如果.*td文件不存在，则为一个新的下载*/
     if(access(myfile_information.file_name_td, F_OK) != 0)
     {
+        int start = 0;
         pthread_t pid;
         int i = 0;
-        //for(i=0; i<thread_number; i++)
-       // {
-            pthread_create(&pid, NULL, work, this);
+        /*多线程下载*/
+        for(i=0; i<thread_number; i++)
+        {
+            Thread_package[i].sockfd = sockfd;
+            Thread_package[i].start = start;
+            start += start + ave_bit;
+            Thread_package[i].end = start;
+            strcpy(Thread_package[i].file_name, myfile_information.file_name);
+        }
+        for(i=0; i<thread_number; i++)
+        {
+            pthread_create(&pid, NULL, work, &Thread_package[i]);
             pthread_join(pid, &statu);    
-        //}
-        //int fd = open()
+        }
         
     }
-    /*如果*/
+    /*如果.*td文件存在,则属于断点下载*/
     else{
 
     }
@@ -232,6 +278,7 @@ void Baseclient :: thread_download()
 }
 void Baseclient :: mysocket()
 {
+    cout << "jinlai\n";
     parse_address();
     if(host == NULL)
     {
@@ -262,8 +309,9 @@ void Baseclient :: mysocket()
 
 int main()
 {
-    int thread_number = 8;
+    int thread_number = 3;
     char address[100]="http://pic1.sc.chinaz.com/files/pic/pic9/201903/zzpic16937.jpg";
+    char ad[100]="http://img0.imgtn.bdimg.com/it/u=1461231435,1552354191&fm=26&gp=0.jpg";
     Baseclient myclient(thread_number, address);
    myclient.mysocket(); 
 }
