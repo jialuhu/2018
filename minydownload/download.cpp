@@ -25,6 +25,7 @@ struct file_imformation{
     char file_name_td[1000];//建立.*td文件，判断是否为断点下载
     long int file_length;//文件的大小字节数目
 };
+
 class Baseclient{
 private:
     int sockfd;//套接字
