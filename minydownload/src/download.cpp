@@ -351,7 +351,7 @@ void Baseclient :: thread_download()
             }
             if(count == myfile_information.file_length)
             {
-                cout << "\n下载结束88\n";
+                cout << "\n下载结束\!n";
                 break;
             }
         }
