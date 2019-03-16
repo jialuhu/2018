@@ -318,19 +318,45 @@ void Baseclient :: thread_download()
         int Sum = 0;
         for(i=0; i<thread_number; i++)
         {
-        //    double s,e,d;
-          //  s = clock();
-            pthread_create(&pid, NULL, work, &Thread_package[i]);
-           // e = clock();
-           // d = (double)difftime(e, s);
-           // Sum = Sum + d;
-            pthread_join(pid, &statu);    
+            /*pthread_create(&pid, NULL, work, &Thread_package[i]);
+            pthread_join(pid, &statu);*/
+            pthread_create(&Thread_package[i].pid, NULL, work, &Thread_package[i]);
+            pthread_detach(Thread_package[i].pid);    
         }
-        //pthread_t tmp;
-        //pthread_create(&tmp, NULL, thread_join, (void *)pid); //创建用于回收下载线程的线程
-       // pthread_detach(tmp);
-            //pthread_join(pid, &statu);
-        cout << "time::" << Sum << endl;
+        
+        /*打印进度条*/
+        cout << "打印进度条\n";
+        char bar[120];
+        char lable[4]="/|\\";
+        int k=0;
+        while(1)
+        {
+            //cout << getpid() << endl;
+            int count = 0;
+            for(auto i=0; i<thread_number; i++)
+            {
+                count = count + Thread_package[i].write_ret;
+            }
+            double percent = ((double)count / (double)myfile_information.file_length)*100;
+           // cout << percent << "%" << endl;
+           // int k=0;
+            while(k <= (int)percent)
+            {
+                printf("[%-100s][%d%%][%c]\r", bar, (int)percent, lable[k % 4]);
+                fflush(stdout);
+                bar[k] = '#';
+                k++;
+                bar[k] = 0;
+                usleep(10000); 
+            }
+            if(count == myfile_information.file_length)
+            {
+                cout << "\n下载结束88\n";
+                break;
+            }
+        }
+        
+        //pthread_join(pid, &statu);    
         /*统计.*td文件中的字数是否等于总字符数量*/
         int sum1 = 0;
         int sum2 = 0;
