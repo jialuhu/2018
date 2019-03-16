@@ -395,7 +395,7 @@ void Baseclient :: mysocket()
 int main(int argc, char const *argv[])
 {
     int thread_number = 5;
-    char address[100]="https://nodejs.org/dist/v4.2.3/node-v4.2.3-linux-x64.tar.gz";
+    //char address[100]="https://nodejs.org/dist/v4.2.3/node-v4.2.3-linux-x64.tar.gz";
     //char ad[100]="http://img.sccnn.com/bimg/341/11247.jpg";
     char ad[100]="http://jy.sccnn.com/zb_users/upload/2019/02/remoteimage2_20190215144726_32002.jpeg";
     Baseclient myclient(thread_number, ad);
