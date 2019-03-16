@@ -72,11 +72,7 @@ public:
     void mysocket();
 private:
     static void *work(void *arg);
-public:
-    int byte_count;
-
 };
-
 Baseclient :: ~Baseclient()
 {
     close(sockfd);
@@ -86,7 +82,6 @@ Baseclient :: ~Baseclient()
 /*解析用户输入的下载地址*/
 Baseclient :: STATUS Baseclient :: parse_address()
 {
-    cout << "9999\n";
     char *get;
     /*判断下载地址的状态*/
     if(strstr(address,"https") != NULL)
@@ -143,10 +138,9 @@ Baseclient :: STATUS Baseclient :: parse_address()
 /*发送HTTP请求头，接收HTTP响应头，对头部内容进行解析*/
 void Baseclient :: parse_httphead()
 {
-    cout << "address:" << address << endl;
-    cout << "发送HTTP请求头：\n";
-    cout << http_request << endl;
-    cout << "接收HTTP响应头:\n";
+    //cout << "发送HTTP请求头：\n";
+    //cout << http_request << endl;
+    //cout << "接收HTTP响应头:\n";
     int ret = write(sockfd, http_request, strlen(http_request));
     if(ret <= 0)
     {
@@ -167,7 +161,7 @@ void Baseclient :: parse_httphead()
     }
     int len = strlen(http_respond);
     http_respond[len] = '\0';
-    cout << http_respond<< endl;
+    //cout << http_respond<< endl;
     
     /*解析出content-length:字段*/
     char *length;
@@ -195,19 +189,6 @@ void Baseclient :: parse_httphead()
     length = length + 16;;
     myfile_information.file_length = atol(length);
    int r_ret = read(sockfd,buf,1);
-   cout << buf[0] << endl;
-    /*int fd = open(myfile_information.file_name, O_CREAT | O_WRONLY, S_IRWXG | S_IRWXO | S_IRWXU);
-    assert(fd >= 0);
-    int index = 0;
-    int mycount = 0;
-    char buffer[1000];
-    while(mycount<myfile_information.file_length && (index = read(sockfd,buffer,1000))>0)
-    {
-        mycount = mycount + index; 
-        write(fd, buffer, index);
-    }
-    cout << "file_length::" << mycount<<endl;
-    close(fd);*/
 }
 
 void* Baseclient :: work(void *arg)
@@ -230,21 +211,22 @@ void* Baseclient :: work(void *arg)
     /*建立连接*/
     int ret = connect(my->sockfd, (struct sockaddr*)&client, sizeof(client));
     assert(ret != -1);
-    cout << "成功连接服务器!\n";
-    cout << "my->url:" << my->url << endl; 
+    //cout << "成功连接服务器!\n";
+    //cout << "my->url:" << my->url << endl; 
     /*填充HTTP GET方法的请求头*/ 
     char http_head_get[1000];
     sprintf(http_head_get,"GET %s HTTP/1.1\r\nHost: %s\r\nConnection: keep-alive\r\nRange: bytes=%ld-%ld\r\n\r\n",my->url, my->fqdn, my->start, my->end);
-    cout << "http_head_get:\n"  << http_head_get << endl;
+   // cout << "http_head_get:\n"  << http_head_get << endl;
 
     /*发送HTTP GET方法的请求头*/
     int r = write(my->sockfd, http_head_get, strlen(http_head_get));
     assert(r>0);
-    cout << "发送HTTP请求成功\n";
+    //cout << "发送HTTP请求成功\n";
     /*处理HTTP请求头*/
     char c[1];
     char buf[2000];
     int k = 0;
+    /*处理响应头函数，判断是否为HTTPS或者不合法HTTP响应头*/
     while(read(my->sockfd, c, 1) != 0)
     {
         buf[k] = c[0];
@@ -256,7 +238,7 @@ void* Baseclient :: work(void *arg)
     }
     int l = strlen(buf);
     buf[l] = '\0';
-    cout << buf<< endl;
+    //cout << buf<< endl;
     
     int len = (my->end) - (my->start);
     buffer = new char[len];
@@ -291,7 +273,7 @@ void Baseclient :: thread_download()
     void *statu;
     long int ave_bit;//线程平均字节数目
     ave_bit = myfile_information.file_length / thread_number;
-    cout << "平均每个线程下载:" << ave_bit << endl;
+    //cout << "平均每个线程下载:" << ave_bit << endl;
     struct thread_package *Thread_package;
     Thread_package = new struct thread_package[thread_number];
     
@@ -312,7 +294,6 @@ void Baseclient :: thread_download()
             Thread_package[i].end = start;
             Thread_package[i].fqdn = fqdn;
             Thread_package[i].url = address_buf;
-            //strcpy(Thread_package[i].file_name, myfile_information.file_name);
             strcpy(Thread_package[i].file_name, myfile_information.file_name_td);
         }
         int Sum = 0;
@@ -331,15 +312,12 @@ void Baseclient :: thread_download()
         int k=0;
         while(1)
         {
-            //cout << getpid() << endl;
             int count = 0;
             for(auto i=0; i<thread_number; i++)
             {
                 count = count + Thread_package[i].write_ret;
             }
             double percent = ((double)count / (double)myfile_information.file_length)*100;
-           // cout << percent << "%" << endl;
-           // int k=0;
             while(k <= (int)percent)
             {
                 printf("[%-100s][%d%%][%c]\r", bar, (int)percent, lable[k % 4]);
@@ -351,11 +329,10 @@ void Baseclient :: thread_download()
             }
             if(count == myfile_information.file_length)
             {
-                cout << "\n下载结束\!n";
+                cout << "\n下载结束\n";
                 break;
             }
         }
-        
         //pthread_join(pid, &statu);    
         /*统计.*td文件中的字数是否等于总字符数量*/
         int sum1 = 0;
@@ -384,7 +361,6 @@ void Baseclient :: mysocket()
 {
     int len = strlen(address);
     address_buf = new char[len];
-    //add = address;
     strcpy(address_buf, address);
     parse_address();
     if(host == NULL)
@@ -408,7 +384,7 @@ void Baseclient :: mysocket()
 
     /*填充HTTP请求头*/
     sprintf(http_request,"HEAD %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n ",address_buf ,fqdn);
-    cout << "http_request:\n" << http_request << endl;
+    //cout << "http_request:\n" << http_request << endl;
     
     /*分析收到的HTTP响应头*/
     parse_httphead();
@@ -420,7 +396,7 @@ void Baseclient :: mysocket()
 
 int main(int argc, char const *argv[])
 {
-    int thread_number = 5;
+    int thread_number = 2;
     //char address[100]="https://nodejs.org/dist/v4.2.3/node-v4.2.3-linux-x64.tar.gz";
     //char ad[100]="http://img.sccnn.com/bimg/341/11247.jpg";
     char ad[100]="http://jy.sccnn.com/zb_users/upload/2019/02/remoteimage2_20190215144726_32002.jpeg";
