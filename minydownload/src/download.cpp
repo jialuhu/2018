@@ -65,6 +65,7 @@ public:
        bzero(&host,sizeof(host));
        bzero(&myfile_information,sizeof(myfile_information));
     }
+
     ~Baseclient();
     STATUS parse_address();//解析下载地址
     void parse_httphead();//解析HTTP响应头
@@ -88,10 +89,10 @@ Baseclient :: STATUS Baseclient :: parse_address()
     {
         return HTTPS;
     }
-    if(strstr(address, "http") != NULL)
+   /* if(strstr(address, "http") != NULL)
     {
         status = HTTP;
-    }
+    }*/
     /*获取FQDN*/
     get = address + 7;
     fqdn = get;//获取FQDN的起始位置
@@ -132,7 +133,7 @@ Baseclient :: STATUS Baseclient :: parse_address()
         myfile_information.file_name_td[i] = myfile_information.file_name[i];
     }
     sprintf(myfile_information.file_name_td, "%s*td",myfile_information.file_name_td);
-    return HTTPS;
+    return HTTP;
 }
 
 /*发送HTTP请求头，接收HTTP响应头，对头部内容进行解析*/
@@ -281,20 +282,20 @@ void Baseclient :: thread_download()
     if(access(myfile_information.file_name_td, F_OK) != 0)
     {
         long int start = 0;
-        pthread_t pid;
+        //pthread_t pid;
         int i = 0;
         /*多线程下载*/
         for(i=0; i<thread_number; i++)
         {
-            Thread_package[i].read_ret = 0;
-            Thread_package[i].write_ret = 0;
-            Thread_package[i].sockfd = -1;
-            Thread_package[i].start = start;
+            Thread_package[i].read_ret = 0;//该线程已经从sockfd读取的字节数目
+            Thread_package[i].write_ret = 0;//该线程已经写入文件的字节数目
+            Thread_package[i].sockfd = -1;//该线程的socket
+            Thread_package[i].start = start;//该线程读取文件内容的开始位置
             start = start + ave_bit;
-            Thread_package[i].end = start;
-            Thread_package[i].fqdn = fqdn;
-            Thread_package[i].url = address_buf;
-            strcpy(Thread_package[i].file_name, myfile_information.file_name_td);
+            Thread_package[i].end = start;//该线程读取文件内容的结束位置
+            Thread_package[i].fqdn = fqdn;//该线程存取访问的fqdn
+            Thread_package[i].url = address_buf;//该线程存取下载地址
+            strcpy(Thread_package[i].file_name, myfile_information.file_name_td);//该线程存取文件名称CIF文件，以判断是否为断点下载
         }
         int Sum = 0;
         for(i=0; i<thread_number; i++)
@@ -310,6 +311,7 @@ void Baseclient :: thread_download()
         char bar[120];
         char lable[4]="/|\\";
         int k=0;
+        /*主线程反复循环，查看各线程是否完成下载,若所有线程完成下载,则退出循环*/
         while(1)
         {
             int count = 0;
@@ -317,6 +319,7 @@ void Baseclient :: thread_download()
             {
                 count = count + Thread_package[i].write_ret;
             }
+            /*按照百分比打印下载进度条*/
             double percent = ((double)count / (double)myfile_information.file_length)*100;
             while(k <= (int)percent)
             {
@@ -333,11 +336,12 @@ void Baseclient :: thread_download()
                 break;
             }
         }
+        rename(myfile_information.file_name_td, myfile_information.file_name);
         //pthread_join(pid, &statu);    
         /*统计.*td文件中的字数是否等于总字符数量*/
-        int sum1 = 0;
-        int sum2 = 0;
-        for(auto i=0; i<thread_number; i++)
+       // int sum1 = 0;
+        //int sum2 = 0;
+        /*for(auto i=0; i<thread_number; i++)
         {
             sum1 = sum1 + Thread_package[i].read_ret;
             sum2 = sum2 + Thread_package[i].write_ret;
@@ -347,7 +351,7 @@ void Baseclient :: thread_download()
 
             rename(myfile_information.file_name_td, myfile_information.file_name);
             cout << "下载完毕!\n";
-        }
+        }*/
         
     }
     
@@ -359,14 +363,20 @@ void Baseclient :: thread_download()
 }
 void Baseclient :: mysocket()
 {
+    STATUS mystatu;
     int len = strlen(address);
     address_buf = new char[len];
     strcpy(address_buf, address);
-    parse_address();
+
+    mystatu = parse_address();//解析输入的下载地址,仅仅支持HTTP下载
+    if(mystatu==HTTPS)
+    {
+        cout << "该程序仅支持HTTP下载\n";
+        exit(0);
+    }
     if(host == NULL)
     {
-        status = HOST_WRONG;
-        cout << "host id wrong!\n";
+        cout << "未知服务器IP，无法进行连接\n";
         exit(0);
     }
     server.sin_family = AF_INET;
