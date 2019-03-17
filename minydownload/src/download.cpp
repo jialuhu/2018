@@ -19,6 +19,8 @@
 #include<assert.h>
 #include<stdlib.h>
 using namespace std;
+enum HTTPCODE{OK, FORBIDDEN, NOTFOUND, UNKNOWN, PARTIAL_OK};
+
 struct file_imformation{
     char *file_path;//文件的绝对路径
     char file_name[1000];//文件解析出来的名称
@@ -37,6 +39,63 @@ struct thread_package{
     int write_ret;//写入字节数目
 };
 
+/*解析HTTP响应码函数*/
+HTTPCODE parse_HTTPCODE(const char *http_respond)
+{
+    char *http;
+    char *get;
+    char code[4];
+    int len = strlen(http_respond);
+    http = new char [len];
+    strcpy(http, http_respond);
+    get = strstr(http," ");
+    get++;
+    int i=0;
+    while(*get != ' ')
+    {
+        code[i++] = *get;
+        get++;
+    }
+    code[3] = '\0';
+    delete [] http;
+    cout << "code:"<< code << endl;
+    if(strcmp(code,"200")==0) return OK;
+    if(strcmp(code,"206")==0) return PARTIAL_OK;
+    if(strcmp(code,"403")==0) return FORBIDDEN;
+    if(strcmp(code, "400")==0) return NOTFOUND;
+    else return UNKNOWN;
+}
+
+/*对HTTP响应码作出相应的处理*/
+void deal_with_code(HTTPCODE code)
+{
+    int my = code;
+    switch(my)
+    {
+        case OK:
+        {
+            cout << "OK\n";
+            return;
+        }
+        case PARTIAL_OK:
+        {
+            cout << "PARTIAL_OK\n";
+            return;
+        }
+        case FORBIDDEN:
+        {
+            cout << "该资源无权访问!\n";
+            exit(0);
+        }
+        case NOTFOUND:
+        {
+            cout << "未找到该资源,请检查下载地址是否填写正确!\n";
+            exit(0);
+        }
+    }
+}
+
+/*客户类定义*/
 class Baseclient{
 private:
     int sockfd;//套接字
@@ -89,10 +148,7 @@ Baseclient :: STATUS Baseclient :: parse_address()
     {
         return HTTPS;
     }
-   /* if(strstr(address, "http") != NULL)
-    {
-        status = HTTP;
-    }*/
+    
     /*获取FQDN*/
     get = address + 7;
     fqdn = get;//获取FQDN的起始位置
@@ -162,8 +218,13 @@ void Baseclient :: parse_httphead()
     }
     int len = strlen(http_respond);
     http_respond[len] = '\0';
-    //cout << http_respond<< endl;
+    cout << http_respond<< endl;
     
+    /*分析HTTP响应码*/
+    HTTPCODE code;
+    code = parse_HTTPCODE(http_respond);
+    deal_with_code(code);
+
     /*解析出content-length:字段*/
     char *length;
     length = strstr(http_respond,"Content-Length:");
@@ -178,7 +239,7 @@ void Baseclient :: parse_httphead()
                 length = strstr(http_respond,"content-length:");
                 if(length == NULL)
                 {
-                    cout << "NO Content-Length\n";
+                    cout << "NOT FOUND  Content-Length\n";
                     exit(0);
                 }
             }
@@ -239,7 +300,9 @@ void* Baseclient :: work(void *arg)
     }
     int l = strlen(buf);
     buf[l] = '\0';
-    //cout << buf<< endl;
+    cout << buf<< endl;
+    HTTPCODE mycode = parse_HTTPCODE(buf);
+    deal_with_code(mycode);
     
     int len = (my->end) - (my->start);
     buffer = new char[len];
@@ -311,10 +374,11 @@ void Baseclient :: thread_download()
         char bar[120];
         char lable[4]="/|\\";
         int k=0;
+        int count = 0;
         /*主线程反复循环，查看各线程是否完成下载,若所有线程完成下载,则退出循环*/
         while(1)
         {
-            int count = 0;
+            count = 0;
             for(auto i=0; i<thread_number; i++)
             {
                 count = count + Thread_package[i].write_ret;
@@ -336,23 +400,19 @@ void Baseclient :: thread_download()
                 break;
             }
         }
-        rename(myfile_information.file_name_td, myfile_information.file_name);
-        //pthread_join(pid, &statu);    
-        /*统计.*td文件中的字数是否等于总字符数量*/
-       // int sum1 = 0;
-        //int sum2 = 0;
-        /*for(auto i=0; i<thread_number; i++)
+        if(count != myfile_information.file_length)
         {
-            sum1 = sum1 + Thread_package[i].read_ret;
-            sum2 = sum2 + Thread_package[i].write_ret;
+            int r = remove(myfile_information.file_name_td);
+            if(r == 0)
+            {
+                cout << "下载失败!\n";
+            }
+            exit(0);
         }
-        if(sum1==sum2 && sum1==myfile_information.file_length)//标识着下载成功
-        {
-
-            rename(myfile_information.file_name_td, myfile_information.file_name);
-            cout << "下载完毕!\n";
-        }*/
-        
+        else{
+                rename(myfile_information.file_name_td, myfile_information.file_name);
+                cout << "下载成功!\n";
+        }
     }
     
     /*如果.*td文件存在,则属于断点下载*/
@@ -376,7 +436,7 @@ void Baseclient :: mysocket()
     }
     if(host == NULL)
     {
-        cout << "未知服务器IP，无法进行连接\n";
+        cout << "无法解析FQDN的IP地址,请检查下载地址是否输入正确\n";
         exit(0);
     }
     server.sin_family = AF_INET;
