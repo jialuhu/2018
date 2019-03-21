@@ -95,6 +95,15 @@ void deal_with_code(HTTPCODE code)
     }
 }
 
+long int get_file_size(int fd)
+{
+    struct stat st;
+    int ret = fstat(fd, &st);
+    assert(ret != -1);
+    return st.st_size;
+}
+
+
 /*客户类定义*/
 class Baseclient{
 private:
@@ -336,88 +345,97 @@ void Baseclient :: thread_download()
 {
     void *statu;
     long int ave_bit;//线程平均字节数目
-    ave_bit = myfile_information.file_length / thread_number;
-    //cout << "平均每个线程下载:" << ave_bit << endl;
     struct thread_package *Thread_package;
     Thread_package = new struct thread_package[thread_number];
     
     /*如果.*td文件不存在，则为一个新的下载*/
     if(access(myfile_information.file_name_td, F_OK) != 0)
     {
-        long int start = 0;
-        //pthread_t pid;
-        int i = 0;
-        /*多线程下载*/
-        for(i=0; i<thread_number; i++)
-        {
-            Thread_package[i].read_ret = 0;//该线程已经从sockfd读取的字节数目
-            Thread_package[i].write_ret = 0;//该线程已经写入文件的字节数目
-            Thread_package[i].sockfd = -1;//该线程的socket
-            Thread_package[i].start = start;//该线程读取文件内容的开始位置
-            start = start + ave_bit;
-            Thread_package[i].end = start;//该线程读取文件内容的结束位置
-            Thread_package[i].fqdn = fqdn;//该线程存取访问的fqdn
-            Thread_package[i].url = address_buf;//该线程存取下载地址
-            strcpy(Thread_package[i].file_name, myfile_information.file_name_td);//该线程存取文件名称CIF文件，以判断是否为断点下载
-        }
-        int Sum = 0;
-        for(i=0; i<thread_number; i++)
-        {
-            /*pthread_create(&pid, NULL, work, &Thread_package[i]);
-            pthread_join(pid, &statu);*/
-            pthread_create(&Thread_package[i].pid, NULL, work, &Thread_package[i]);
-            pthread_detach(Thread_package[i].pid);    
-        }
-        
-        /*打印进度条*/
-        cout << "打印进度条\n";
-        char bar[120];
-        char lable[4]="/|\\";
-        int k=0;
-        int count = 0;
-        /*主线程反复循环，查看各线程是否完成下载,若所有线程完成下载,则退出循环*/
-        while(1)
-        {
-            count = 0;
-            for(auto i=0; i<thread_number; i++)
-            {
-                count = count + Thread_package[i].write_ret;
-            }
-            /*按照百分比打印下载进度条*/
-            double percent = ((double)count / (double)myfile_information.file_length)*100;
-            while(k <= (int)percent)
-            {
-                printf("[%-100s][%d%%][%c]\r", bar, (int)percent, lable[k % 4]);
-                fflush(stdout);
-                bar[k] = '#';
-                k++;
-                bar[k] = 0;
-                usleep(10000); 
-            }
-            if(count == myfile_information.file_length)
-            {
-                cout << "\n下载结束\n";
-                break;
-            }
-        }
-        if(count != myfile_information.file_length)
-        {
-            int r = remove(myfile_information.file_name_td);
-            if(r == 0)
-            {
-                cout << "下载失败!\n";
-            }
-            exit(0);
-        }
-        else{
-                rename(myfile_information.file_name_td, myfile_information.file_name);
-                cout << "下载成功!\n";
-        }
+        ave_bit = myfile_information.file_length / thread_number;
+       
     }
     
     /*如果.*td文件存在,则属于断点下载*/
-    else{
+    else
+    {
+        int fd = open(myfile_information.file_name_td, O_CREAT | O_WRONLY, S_IRWXG | S_IRWXO | S_IRWXU);
+        /*获取已经读过的文件大小*/
+        long int file_size = get_file_size(fd);
+        cout << "已经读取的字节数目:"<< file_size << endl;
+        close(fd);
+        /*计算出剩下的文件大小,计算每个线程应该读多少字节*/
+        myfile_information.file_length = myfile_information.file_length - file_size;
+        cout << "剩余字节数:" << myfile_information.file_length << endl;
+        ave_bit = myfile_information.file_length / thread_number;
+    }
 
+    long int start = 0;
+    int i = 0;
+    /*多线程下载*/
+    for(i=0; i<thread_number; i++)
+    {
+        Thread_package[i].read_ret = 0;//该线程已经从sockfd读取的字节数目
+        Thread_package[i].write_ret = 0;//该线程已经写入文件的字节数目
+        Thread_package[i].sockfd = -1;//该线程的socket
+        Thread_package[i].start = start;//该线程读取文件内容的开始位置
+        start = start + ave_bit;
+        Thread_package[i].end = start;//该线程读取文件内容的结束位置
+        Thread_package[i].fqdn = fqdn;//该线程存取访问的fqdn
+        Thread_package[i].url = address_buf;//该线程存取下载地址
+        strcpy(Thread_package[i].file_name, myfile_information.file_name_td);//该线程存取文件名称CIF文件，以判断是否为断点下载
+    }
+    int Sum = 0;
+    for(i=0; i<thread_number; i++)
+    {
+        /*pthread_create(&pid, NULL, work, &Thread_package[i]);
+         pthread_join(pid, &statu);*/
+        pthread_create(&Thread_package[i].pid, NULL, work, &Thread_package[i]);
+        pthread_detach(Thread_package[i].pid);
+    }
+    
+    /*打印进度条*/
+    cout << "打印进度条\n";
+    char bar[120];
+    char lable[4]="/|\\";
+    int k=0;
+    int count = 0;
+    /*主线程反复循环，查看各线程是否完成下载,若所有线程完成下载,则退出循环*/
+    while(1)
+    {
+        count = 0;
+        for(auto i=0; i<thread_number; i++)
+        {
+            count = count + Thread_package[i].write_ret;
+        }
+        /*按照百分比打印下载进度条*/
+        double percent = ((double)count / (double)myfile_information.file_length)*100;
+        while(k <= (int)percent)
+        {
+            printf("[%-100s][%d%%][%c]\r", bar, (int)percent, lable[k % 4]);
+            fflush(stdout);
+            bar[k] = '#';
+            k++;
+            bar[k] = 0;
+            usleep(10000);
+        }
+        if(count == myfile_information.file_length)
+        {
+            cout << "\n下载结束\n";
+            break;
+        }
+    }
+    if(count != myfile_information.file_length)
+    {
+        int r = remove(myfile_information.file_name_td);
+        if(r == 0)
+        {
+            cout << "下载失败!\n";
+        }
+        exit(0);
+    }
+    else{
+        rename(myfile_information.file_name_td, myfile_information.file_name);
+        cout << "下载成功!\n";
     }
 
 }
