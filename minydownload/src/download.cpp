@@ -2,42 +2,10 @@
 	> File Name: download.cpp
 	> Author: 
 	> Mail: 
-	> Created Time: 三  3/ 6 20:05:00 2019
+	> Created Time: 日  3/24 10:44:42 2019
  ************************************************************************/
 
-#include<iostream>
-#include<unistd.h>
-#include<fcntl.h>
-#include<pthread.h>
-#include<stdlib.h>
-#include<string.h>
-#include<sys/socket.h>
-#include<sys/stat.h>
-#include<sys/time.h>
-#include<arpa/inet.h>
-#include<netdb.h>
-#include<assert.h>
-#include<stdlib.h>
-using namespace std;
-enum HTTPCODE{OK, FORBIDDEN, NOTFOUND, UNKNOWN, PARTIAL_OK};
-
-struct file_imformation{
-    char *file_path;//文件的绝对路径
-    char file_name[1000];//文件解析出来的名称
-    char file_name_td[1000];//建立.*td文件，判断是否为断点下载
-    long int file_length;//文件的大小字节数目
-};
-struct thread_package{
-    pthread_t pid;//线程号
-    char *url;
-    char *fqdn;
-    int sockfd;//sockfd
-    long int start;//文件下载起始位置
-    long int end;//文件下载结束位置
-    char file_name[1000];//文件名称
-    int read_ret;//读取字节数目
-    int write_ret;//写入字节数目
-};
+#include"download.h"
 
 /*解析HTTP响应码函数*/
 HTTPCODE parse_HTTPCODE(const char *http_respond)
@@ -103,50 +71,11 @@ long int get_file_size(int fd)
     return st.st_size;
 }
 
-
-/*客户类定义*/
-class Baseclient{
-private:
-    int sockfd;//套接字
-    int port;//端口号
-    int thread_number;//开辟的线程数量
-    char *address;//下载地址参数
-    char *address_buf;
-    char *fqdn;//FQDN解析
-    char http_request[1000];//http请求头填写
-    char http_respond[1000];//http响应头接收
-    struct sockaddr_in server;//服务器套接字地址
-    struct hostent *host;//通过解析下载地址，获取IP地址
-    struct thread_package Thread_package;//线程包
-    struct file_imformation myfile_information;//文件信息
-    enum STATUS{HTTP=0, HTTPS, HOST_WRONG};
-    STATUS status;
-public:
-    Baseclient(int thread_num, char *addr) : thread_number(thread_num), address(addr){
-        sockfd = -1;
-        port = 80;//默认端口为80
-        fqdn = NULL;
-        status = HTTP;
-        memset(http_request, 0, 1000);
-        bzero(&server,sizeof(server));
-        bzero(&Thread_package,sizeof(Thread_package));
-       bzero(&host,sizeof(host));
-       bzero(&myfile_information,sizeof(myfile_information));
-    }
-
-    ~Baseclient();
-    STATUS parse_address();//解析下载地址
-    void parse_httphead();//解析HTTP响应头
-    void thread_download();//多线程下载
-    void mysocket();
-private:
-    static void *work(void *arg);
-};
 Baseclient :: ~Baseclient()
 {
     close(sockfd);
     delete [] myfile_information.file_path;
-
+    
 }
 /*解析用户输入的下载地址*/
 Baseclient :: STATUS Baseclient :: parse_address()
@@ -166,7 +95,7 @@ Baseclient :: STATUS Baseclient :: parse_address()
     host = gethostbyname(fqdn); //通过名字获取hostIP地址
     
     /*获取文件的绝对路径*/
-    int len = strlen(get)+2;   
+    int len = strlen(get)+2;
     myfile_information.file_path = new char[len];
     sprintf(myfile_information.file_path, "/%s",get);
     myfile_information.file_path[len-1] = '\0';
@@ -185,7 +114,7 @@ Baseclient :: STATUS Baseclient :: parse_address()
     len = strlen(get);
     strcpy(myfile_information.file_name,get);
     myfile_information.file_name[strlen(get)] = '\0';
-
+    
     /*获取.*td文件名称*/
     len = strlen(myfile_information.file_name);
     for(int i=0; i<len; i++)
@@ -233,7 +162,7 @@ void Baseclient :: parse_httphead()
     HTTPCODE code;
     code = parse_HTTPCODE(http_respond);
     deal_with_code(code);
-
+    
     /*解析出content-length:字段*/
     char *length;
     length = strstr(http_respond,"Content-Length:");
@@ -259,7 +188,7 @@ void Baseclient :: parse_httphead()
     *get = '\0';
     length = length + 16;;
     myfile_information.file_length = atol(length);
-   int r_ret = read(sockfd,buf,1);
+    int r_ret = read(sockfd,buf,1);
 }
 
 void* Baseclient :: work(void *arg)
@@ -272,7 +201,7 @@ void* Baseclient :: work(void *arg)
     struct hostent *thread_host;
     thread_host = gethostbyname(my->fqdn);
     client.sin_family = AF_INET;
-    client.sin_addr.s_addr = *(int *)thread_host->h_addr_list[0]; 
+    client.sin_addr.s_addr = *(int *)thread_host->h_addr_list[0];
     client.sin_port = htons(80);
     
     /*创建套接字*/
@@ -283,12 +212,12 @@ void* Baseclient :: work(void *arg)
     int ret = connect(my->sockfd, (struct sockaddr*)&client, sizeof(client));
     assert(ret != -1);
     //cout << "成功连接服务器!\n";
-    //cout << "my->url:" << my->url << endl; 
-    /*填充HTTP GET方法的请求头*/ 
+    //cout << "my->url:" << my->url << endl;
+    /*填充HTTP GET方法的请求头*/
     char http_head_get[1000];
     sprintf(http_head_get,"GET %s HTTP/1.1\r\nHost: %s\r\nConnection: keep-alive\r\nRange: bytes=%ld-%ld\r\n\r\n",my->url, my->fqdn, my->start, my->end);
-   // cout << "http_head_get:\n"  << http_head_get << endl;
-
+    // cout << "http_head_get:\n"  << http_head_get << endl;
+    
     /*发送HTTP GET方法的请求头*/
     int r = write(my->sockfd, http_head_get, strlen(http_head_get));
     assert(r>0);
@@ -352,7 +281,7 @@ void Baseclient :: thread_download()
     if(access(myfile_information.file_name_td, F_OK) != 0)
     {
         ave_bit = myfile_information.file_length / thread_number;
-       
+        
     }
     
     /*如果.*td文件存在,则属于断点下载*/
@@ -368,7 +297,7 @@ void Baseclient :: thread_download()
         cout << "剩余字节数:" << myfile_information.file_length << endl;
         ave_bit = myfile_information.file_length / thread_number;
     }
-
+    
     long int start = 0;
     int i = 0;
     /*多线程下载*/
@@ -437,7 +366,7 @@ void Baseclient :: thread_download()
         rename(myfile_information.file_name_td, myfile_information.file_name);
         cout << "下载成功!\n";
     }
-
+    
 }
 void Baseclient :: mysocket()
 {
@@ -445,7 +374,7 @@ void Baseclient :: mysocket()
     int len = strlen(address);
     address_buf = new char[len];
     strcpy(address_buf, address);
-
+    
     mystatu = parse_address();//解析输入的下载地址,仅仅支持HTTP下载
     if(mystatu==HTTPS)
     {
@@ -458,7 +387,7 @@ void Baseclient :: mysocket()
         exit(0);
     }
     server.sin_family = AF_INET;
-    server.sin_addr.s_addr = *(int *)host->h_addr_list[0]; 
+    server.sin_addr.s_addr = *(int *)host->h_addr_list[0];
     server.sin_port = htons(port);
     
     /*创建套接字*/
@@ -469,26 +398,19 @@ void Baseclient :: mysocket()
     int ret = connect(sockfd, (struct sockaddr*)&server, sizeof(server));
     assert(ret != -1);
     cout << "成功连接服务器!\n";
-
+    
     /*填充HTTP请求头*/
     sprintf(http_request,"HEAD %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n ",address_buf ,fqdn);
     //cout << "http_request:\n" << http_request << endl;
     
     /*分析收到的HTTP响应头*/
     parse_httphead();
-
+    
     /*根据线程数量进行下载文件*/
     thread_download();
     
 }
 
-int main(int argc, char const *argv[])
-{
-    int thread_number = 2;
-    //char address[100]="https://nodejs.org/dist/v4.2.3/node-v4.2.3-linux-x64.tar.gz";
-    //char ad[100]="http://img.sccnn.com/bimg/341/11247.jpg";
-    char ad[100]="http://jy.sccnn.com/zb_users/upload/2019/02/remoteimage2_20190215144726_32002.jpeg";
-    Baseclient myclient(thread_number, ad);
-    myclient.mysocket(); 
-    return 0;
-}
+
+
+
